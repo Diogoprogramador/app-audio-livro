@@ -1,0 +1,115 @@
+import kivy
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.filechooser import FileChooserListView
+from kivy.uix.slider import Slider
+import docx
+import pyttsx3
+import threading
+
+kivy.require('2.0.0')  # Versão mínima do Kivy requerida
+
+class BookReaderApp(BoxLayout):
+    def __init__(self, **kwargs):
+        super(BookReaderApp, self).__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.text_to_read = ""
+        self.current_index = 0
+        self.is_reading = False
+        self.engine = pyttsx3.init()
+        self.paused = False
+        self.voice_rate = 1.0  # Taxa de fala padrão
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        self.file_chooser = FileChooserListView()
+        self.add_widget(self.file_chooser)
+
+        self.open_button = Button(text="Abrir Documento")
+        self.open_button.bind(on_press=self.open_document)
+        self.add_widget(self.open_button)
+
+        self.play_button = Button(text="Iniciar Leitura")
+        self.play_button.bind(on_press=self.start_reading)
+        self.add_widget(self.play_button)
+
+        self.pause_button = Button(text="Pausar Leitura", disabled=True)
+        self.pause_button.bind(on_press=self.pause_reading)
+        self.add_widget(self.pause_button)
+
+        self.resume_button = Button(text="Continuar Leitura", disabled=True)
+        self.resume_button.bind(on_press=self.resume_reading)
+        self.add_widget(self.resume_button)
+
+        self.voice_rate_slider = Slider(min=0.5, max=2.0, value=1.0, step=0.1)
+        self.voice_rate_slider.bind(value=self.on_voice_rate_change)
+        self.add_widget(Label(text="Velocidade da Voz"))
+        self.add_widget(self.voice_rate_slider)
+
+        self.status_label = Label(text="")
+        self.add_widget(self.status_label)
+
+    def open_document(self, instance):
+        file_path = self.file_chooser.selection and self.file_chooser.selection[0] or None
+        if file_path:
+            try:
+                doc = docx.Document(file_path)
+                paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+                self.text_to_read = "\n".join(paragraphs)
+                self.status_label.text = "Documento aberto com sucesso."
+                self.play_button.disabled = False
+            except Exception as e:
+                self.status_label.text = f"Erro ao abrir arquivo Word:\n{str(e)}"
+
+    def start_reading(self, instance):
+        if not self.text_to_read:
+            self.status_label.text = "Selecione um arquivo Word primeiro."
+            return
+
+        self.is_reading = True
+        self.play_button.disabled = True
+        self.pause_button.disabled = False
+
+        threading.Thread(target=self.read_text_thread).start()
+
+    def read_text_thread(self):
+        words = self.text_to_read.split()
+        self.engine.setProperty('rate', 150 * self.voice_rate)  # Ajuste da velocidade de leitura
+        for word in words[self.current_index:]:
+            if not self.is_reading:
+                break
+            while self.paused:
+                self.engine.stop()
+                continue
+            self.current_index += len(word) + 1
+            self.engine.say(word)
+            self.engine.runAndWait()
+
+        self.current_index = 0
+        self.is_reading = False
+        self.play_button.disabled = False
+        self.pause_button.disabled = True
+        self.resume_button.disabled = True
+
+    def pause_reading(self, instance):
+        self.paused = True
+        self.pause_button.disabled = True
+        self.resume_button.disabled = False
+
+    def resume_reading(self, instance):
+        self.paused = False
+        self.pause_button.disabled = False
+        self.resume_button.disabled = True
+
+    def on_voice_rate_change(self, instance, value):
+        self.voice_rate = value
+
+class BookReaderAppApp(App):
+    def build(self):
+        return BookReaderApp()
+
+if __name__ == "__main__":
+    BookReaderAppApp().run()
